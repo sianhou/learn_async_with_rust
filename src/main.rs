@@ -30,6 +30,125 @@ pub struct Runtime {
     timers_to_remove: Vec<Instant>,
 }
 
+impl Runtime {
+    pub fn run(mut self, f: impl Fn()) {
+        let rt_ptr: *mut Runtime = &mut self;
+        unsafe { RUNTIME = rt_ptr };
+    
+        // just for us priting out during execution
+        let mut ticks = 0;
+    
+        // First we run our "main" function
+        f();
+    
+        // ===== EVENT LOOP =====
+        while self.pending_events > 0 {
+            ticks += 1;
+            // NOT PART OF LOOP, JUST FOR US TO SEE WHAT TICK IS EXCECUTING
+            print(format!("===== TICK {} =====", ticks));
+    
+            // ===== 2. TIMERS =====
+            self.process_expired_timers();
+    
+            // ===== 2. CALLBACKS =====
+            // Timer callbacks and if for some reason we have postponed callbacks
+            // to run on the next tick. Not possible in our implementation though.
+            self.run_callbacks();
+    
+            // ===== 3. IDLE/PREPARE =====
+            // we won't use this
+    
+            // ===== 4. POLL =====
+            // First we need to check if we have any outstanding events at all
+            // and if not we're finished. If not we will wait forever.
+            if self.pending_events == 0 {
+                break;
+            }
+    
+            // We want to get the time to the next timeout (if any) and we
+            // set the timeout of our epoll wait to the same as the timeout
+            // for the next timer. If there is none, we set it to infinite (None)
+            let next_timeout = self.get_next_timer();
+    
+            let mut epoll_timeout_lock = self.epoll_timeout.lock().unwrap();
+            *epoll_timeout_lock = next_timeout;
+            // We release the lock before we wait in `recv`
+            drop(epoll_timeout_lock);
+    
+            // We handle one and one event but multiple events could be returned
+            // on the same poll. We won't cover that here though but there are
+            // several ways of handling this.
+            if let Ok(event) = self.event_reciever.recv() {
+                match event {
+                    PollEvent::Timeout => (),
+                    PollEvent::Threadpool((thread_id, callback_id, data)) => {
+                        self.process_threadpool_events(thread_id, callback_id, data);
+                    }
+                    PollEvent::Epoll(event_id) => {
+                        self.process_epoll_events(event_id);
+                    }
+                }
+            }
+            self.run_callbacks();
+    
+            // ===== 5. CHECK =====
+            // an set immidiate function could be added pretty easily but we
+            // won't do that here
+    
+            // ===== 6. CLOSE CALLBACKS ======
+            // Release resources, we won't do that here, but this is typically
+            // where sockets etc are closed.
+        }
+    
+        // We clean up our resources, makes sure all destructors runs.
+        for thread in self.thread_pool.into_iter() {
+            thread.sender.send(Task::close()).expect("threadpool cleanup");
+            thread.handle.join().unwrap();
+        }
+    
+        self.epoll_registrator.close_loop().unwrap();
+        self.epoll_thread.join().unwrap();
+    
+        print("FINISHED");
+    }
+
+    pub fn new() -> Self {
+        let (event_sender, event_reciever) = channel::<PollEvent>();
+        let mut threads = Vec::with_capacity(4);
+
+        for i in 0..4 {
+            let (evt_sender, evt_reciever) = channel::<Task>();
+            let event_sender = event_sender.clone();
+
+            let handle = thread::Builder::new()
+                .name(format!("pool{}", i))
+                .spwan(move || {
+                    while let Ok(task) = evt_reciever.recv() {
+                        print(format!("received a task of type: {}", task.kind));
+
+                        if let ThreadPoolTaskKind::Close = task.kind {
+                            break;
+                        };
+
+                        let res = (task.task)();
+                        print(format!("finished running a task of type: {}.", task.kind));
+
+                        let event = PollEvent::threadpool((i, task.callback_id, res));
+                        event_sender.send(event).expect("threadpool");
+                    }
+                })
+                .expect("Couldn't initialize thread pool.");
+
+                let node_thread = NodeThread {
+                    handle,
+                    sender: evt_sender,
+                };
+
+                threads.push(node_thread);
+        }
+    }
+}
+
 
 struct Task {
     task: Box<dyn Fn() -> Js + Send + 'static>,
