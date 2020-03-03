@@ -28,6 +28,7 @@ pub struct Runtime {
     /// A struct to temporarely hold timers to remove. We let Runtinme have
     /// ownership so we can reuse the same memory
     timers_to_remove: Vec<Instant>,
+    next_tick_callbacks: Vec<(usize, Js)>,
 }
 
 impl Runtime {
@@ -146,7 +147,175 @@ impl Runtime {
 
                 threads.push(node_thread);
         }
+
+        let mut poll = minimio::Poll::new().expect("Error creating epoll queue");
+        let registrator = poll.registrator();
+        let epoll_timeout = Arc::new(Mutex::new(None));
+        let epoll_timeout_clone = epoll_timeout.clone();
+
+        let epoll_thread = thread::Builder::new()
+            .name("epoll".to_string())
+            .spawn(move || {
+                let mut events = minimio::Events::with_capacity(1024);
+        
+                loop {
+                    let epoll_timeout_handle = epoll_timeout_clone.lock().unwrap();
+                    let timeout = *epoll_timeout_handle;
+                    drop(epoll_timeout_handle);
+        
+                    match poll.poll(&mut events, timeout) {
+                        Ok(v) if v > 0 => {
+                            for i in 0..v {
+                                let event = events.get_mut(i).expect("No events in event list.");
+                                print(format!("epoll event {} is ready", event.id().value()));
+        
+                                let event = PollEvent::Epoll(event.id().value() as usize);
+                                event_sender.send(event).expect("epoll event");
+                            }
+                        }
+                        Ok(v) if v == 0 => {
+                            print("epoll event timeout is ready");
+                            event_sender.send(PollEvent::Timeout).expect("epoll timeout");
+                        }
+                        Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {
+                            print("received event of type: Close");
+                            break;
+                        }
+                        Err(e) => panic!("{:?}", e),
+                        _ => (),
+                    }
+                }
+            })
+            .expect("Error creating epoll thread");
+
+            Runtime {
+                available_threads: (0..4).collect(),
+                callbacks_to_run: vec![],
+                callback_queue: HashMap::new(),
+                epoll_pending_events: 0,
+                epoll_registrator: registrator,
+                epoll_thread,
+                epoll_timeout,
+                event_reciever,
+                identity_token: 0,
+                pending_events: 0,
+                thread_pool: threads,
+                timers: BTreeMap::new(),
+                timers_to_remove: vec![],
+            }
     }
+
+    fn process_expired_timers(&mut self) {
+        // Need an intermediate variable to please the borrowchecker
+        let timers_to_remove = &mut self.timers_to_remove;
+
+        self.timers
+            .range(..=Instant::now())
+            .for_each(|(k, _)| timers_to_remove.push(*k));
+
+        while let Some(key) = self.timers_to_remove.pop() {
+            let callback_id = self.timers.remove(&key).unwrap();
+            self.callbacks_to_run.push((callback_id, Js::Undefined));
+        }
+    }
+
+    fn get_next_timer(&self) -> Option<i32> {
+        self.timers.iter().nth(0).map(|(&instant, _)| {
+            let mut time_to_next_timeout = instant - Instant::now();
+            if time_to_next_timeout < Duration::new(0, 0) {
+                time_to_next_timeout = Duration::new(0, 0);
+            }
+            time_to_next_timeout.as_millis() as i32
+        })
+    }
+
+    fn run_callbacks(&mut self) {
+        while let Some((callback_id, data)) = self.callbacks_to_run.pop() {
+            let cb = self.callback_queue.remove(&callback_id).unwrap();
+            cb(data);
+            self.pending_events -= 1;
+        }
+    }
+
+    fn process_threadpool_events(&mut self, thread_id: usize, callback_id: usize, data: Js) {
+        self.callbacks_to_run.push((callback_id, data));
+        self.available_threads.push(thread_id);
+    }
+
+    fn process_epoll_events(&mut self, event_id: usize) {
+        self.callbacks_to_run.push((event_id, Js::Undefined));
+        self.epoll_pending_events -= 1;
+    }
+
+    fn get_available_thread(&mut self) -> usize {
+        match self.available_threads.pop() {
+            Some(thread_id) => thread_id,
+            // This is not good, and we should rather implement logic to queue these requests and run them as soon as a thread is available. 
+            None => panic("Out of threads."),
+        }
+    }
+
+    fn generate_identity(&mut self) -> usize {
+        self.identity_token = self.identity_token.wrapping_add(1);
+        self.identity_token
+    }
+
+    fn generate_cb_identity(&mut self) -> usize {
+        let ident = self.generate_identity();
+        let taken = self.callback_queue.contain_key(&ident);
+
+        if !taken (
+            ident
+        ) else {
+            loop {
+                let possible_ident = self.generate_identity();
+                if self.callback_queue.contain_key(&possible_ident) {
+                    break possible_ident;
+                }
+            }
+        }
+    }
+
+    fn add_callback(&mut self, ident: usize, cb: impl FnOnce(Js) + 'static) {
+        let boxed_cb = Box::new(cb);
+        self.callback_queue.insert(ident, boxed_cb);
+    }
+
+    pub fn register_event_epoll(&mut self, token: usize, cb: impl FnOnce(Js) + 'static) {
+        self.add_callback(token, cb);
+
+        print(format!("Event with id: {} registered.", token));
+        self.pending_events += 1;
+        self.epoll_pending_events += 1;
+    }
+
+    pub fn register_event_threadpool(&mut self, task: T, kind: ThreadPoolTaskKind, cb: U)
+        where T: impl Fn() -> Js + Send + 'static,
+              U: impl FnOnce(Js) + 'static, {
+        let callback_id = self.generate_cb_identity();
+        self.add_callback(callback_id, cb);
+
+        let event = Task {
+            task: Box::new(task),
+            callback_id,
+            kind,
+        };
+
+        let available = self.get_available_thread();
+        self.thread_pool[available].sender.send(event).expect("register work");
+        self.pending_events += 1;
+    }
+
+    fn set_timeout(&mut self, ms: u64, cb: impl Fn(Js) + 'static) {
+        let now = Instant::now();
+        let cb_id = self.generate_cb_identity();
+        self.add_callback(cb_id, cb);
+        let timeout = now + Duration::from_millis(ms);
+        self.timers.insert(timeout, cb_id);
+        self.pending_events += 1;
+        print(format!("Registered timer event id: {}", cb_id));
+    }
+
 }
 
 
