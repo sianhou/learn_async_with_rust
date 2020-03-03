@@ -391,6 +391,24 @@ enum PollEvent {
     Timeout,
 }
 
+stuct Fs;
+
+impl Fs {
+    fn read(path: &'static str, cb: impl Fn(Js) + 'static) {
+        let work = move || {
+            thread::sleep(std::time::Duration::from_secs(1));
+            let mut buffer = String::new();
+            fs::File::Open(&path)
+                .unwrap()
+                .read_to_string(&mut buffer)
+                .unwrap();
+            Js::String(buffer)
+        };
+        let tr = unsafe { &mut *RUNTIME };
+        rt.register_work(work, ThreadPoolTaskKind::FileRead, cb);
+    }
+}
+
 static mut RUNTIME: *mut Runtime = std::ptr::null_mut();
 
 fn main() {
