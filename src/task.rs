@@ -1,8 +1,9 @@
 use std::{fmt};
 
 pub struct Task {
-    task: Box<dyn Fn() -> Option<String> + Send + 'static>,
-    pub kind: ThreadPollTaskKind,
+    pub(crate) task: Box<dyn Fn() -> Option<String> + Send + 'static>,
+    pub(crate) callback_id: usize,
+    pub(crate) kind: ThreadPollTaskKind,
 }
 
 pub enum ThreadPollTaskKind {
