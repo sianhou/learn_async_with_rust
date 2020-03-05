@@ -1,17 +1,23 @@
-use std::sync::mpsc::channel;
-use std::{ thread, collections::HashMap };
-
-use lazy_static::lazy_static;
+use std::{ 
+    thread, 
+    collections::HashMap, 
+    sync::mpsc::channel 
+};
 
 use crate::nodethread::NodeThread;
 use crate::pollevent::PollEvent;
-use crate::task::{Task, ThreadPollTaskKind};
+use crate::task::{
+    Task, 
+    ThreadPollTaskKind
+};
+
+pub(crate) static mut RUNTIME: *mut Runtime = std::ptr::null_mut();
 
 pub struct Runtime {
     /// Available threads for the threadpool
     available_threads: Vec<usize>,
     /// All registered callbacks
-    callback_queue: HashMap<usize, Box<dyn FnOnce(Option<String>)>>,
+    callback_queue: HashMap<usize, Box<dyn FnOnce(Option<String>) >>,
     // the unique id for callback funciton
     identity_token: usize,
     pending_events: usize,
@@ -54,8 +60,10 @@ impl Runtime {
         }
     }
 
-    fn run() {
-
+    pub fn run(mut self) {
+        let rt_ptr: *mut Runtime = &mut self;
+        unsafe { RUNTIME = rt_ptr; }
+        println!{"{:p}", rt_ptr};
     }
 
     fn add_callback<U>(&mut self, ident: usize, cb: U) 
