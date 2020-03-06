@@ -19,6 +19,12 @@ pub struct Runtime {
     callback_token: usize,
     // Pending events
     event_pending: usize,
+    // event_queue
+    pub(crate) thread_pool_event: Vec<(
+        Box<dyn Fn() -> Option<String> + Send + 'static>,
+        ThreadPollTaskKind,
+        Box<dyn FnOnce(Option<String>) + 'static>,
+    )>,
     // Event reciever
     event_reciever: Receiver<PollEvent>,
     // Available threads in thread_pool
@@ -36,18 +42,25 @@ impl Runtime {
         for i in 0..4 {
             let (evt_sender, evt_reciever) = channel::<Task>();
             let event_sender = event_sender.clone();
+            let thread_id = i;
 
             let handle = thread::spawn(move || {
-                    while let Ok(task) = evt_reciever.recv() {
-                        println!("received a task of type: {}", task.kind);
+                while let Ok(task) = evt_reciever.recv() {
+                    println!(
+                        "thread {} - received a task of type: {}",
+                        thread_id, task.kind
+                    );
 
-                        let res = (task.task)();
-                        println!("finished running a task of type: {}.", task.kind);
+                    let res = (task.task)();
+                    println!(
+                        "thread {} - finished running a task of type: {}.",
+                        thread_id, task.kind
+                    );
 
-                        let event = PollEvent::Threadpool((i, task.callback_id, res));
-                        event_sender.send(event).expect("threadpool");
-                    }
-                });
+                    let event = PollEvent::Threadpool((i, task.callback_id, res));
+                    event_sender.send(event).expect("threadpool");
+                }
+            });
 
             let node_thread = NodeThread {
                 handle: handle,
@@ -60,6 +73,7 @@ impl Runtime {
         Runtime {
             event_reciever: event_reciever,
             event_pending: 0,
+            thread_pool_event: vec![],
             callback_pending: HashMap::new(),
             callback_ready: vec![],
             callback_token: 0,
@@ -68,32 +82,35 @@ impl Runtime {
         }
     }
 
-    pub fn run(mut self, f: impl Fn()) {
+    pub fn run(mut self, async_func: impl Fn()) {
         let rt_ptr: *mut Runtime = &mut self;
         unsafe { RUNTIME = rt_ptr };
 
-        let mut ticks = 0;
+        let mut main_ticks = 0;
 
-        f();
+        async_func();
 
-        while self.event_pending > 0 {
-            ticks += 1;
-            // NOT PART OF LOOP, JUST FOR US TO SEE WHAT TICK IS EXCECUTING
-            println!("===== TICK {} =====", ticks);
+        while self.thread_pool_event.len() > 0 {
+            // 0. Output the main loop
+            main_ticks += 1;
+            println!("===== MAIN LOOP {} =====", main_ticks);
 
-            // ===== 4. POLL =====
-            // First we need to check if we have any outstanding events at all
-            // and if not we're finished. If not we will wait forever.
+            self.register_threadpool_event();
 
-            if let Ok(event) = self.event_reciever.recv() {
-                match event {
-                    PollEvent::Threadpool((thread_id, callback_id, data)) => {
-                        self.process_threadpool_events(thread_id, callback_id, data);
+            while self.event_pending > 0 {
+                // NOT PART OF LOOP, JUST FOR US TO SEE WHAT TICK IS EXCECUTING
+                // ===== 4. POLL =====
+                // First we need to check if we have any outstanding events at all
+                // and if not we're finished. If not we will wait forever.
+                if let Ok(event) = self.event_reciever.recv() {
+                    match event {
+                        PollEvent::Threadpool((thread_id, callback_id, data)) => {
+                            self.process_threadpool_events(thread_id, callback_id, data);
+                        }
                     }
                 }
+                self.run_callbacks();
             }
-
-            self.run_callbacks();
         }
     }
 
@@ -118,33 +135,29 @@ impl Runtime {
         }
     }
 
-    fn get_available_thread(&mut self) -> usize {
-        match self.thread_available.pop() {
-            Some(thread_id) => thread_id,
-            None => panic!("Out of threads"),
+    fn register_threadpool_event(&mut self) {
+        loop {
+            if self.thread_pool_event.len() > 0 && self.thread_available.len() > 0 {
+                let (task, kind, cb) = self.thread_pool_event.pop().unwrap();
+
+                let callback_id = self.generate_cb_identity();
+                self.add_callback(callback_id, cb);
+
+                let thread_id = self.thread_available.pop().unwrap();
+                let event = Task {
+                    task: task,
+                    callback_id: callback_id,
+                    kind: kind,
+                };
+                self.thread_pool[thread_id]
+                    .sender
+                    .send(event)
+                    .expect("register work");
+                self.event_pending += 1;
+            } else {
+                break;
+            }
         }
-    }
-
-    pub fn register_event_threadpool<T, U>(&mut self, task: T, kind: ThreadPollTaskKind, cb: U)
-    where
-        T: Fn() -> Option<String> + Send + 'static,
-        U: FnOnce(Option<String>) + 'static,
-    {
-        let callback_id = self.generate_cb_identity();
-        self.add_callback(callback_id, cb);
-
-        let event = Task {
-            task: Box::new(task),
-            callback_id: callback_id,
-            kind: kind,
-        };
-
-        let available_thread = self.get_available_thread();
-        self.thread_pool[available_thread]
-            .sender
-            .send(event)
-            .expect("register work");
-        self.event_pending += 1;
     }
 
     fn process_threadpool_events(

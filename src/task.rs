@@ -33,6 +33,10 @@ impl Fs {
         };
 
         let rt = unsafe { &mut *crate::runtime::RUNTIME };
-        rt.register_event_threadpool(work, ThreadPollTaskKind::FileRead, cb);
+        rt.thread_pool_event.push((
+            Box::new(work),
+            ThreadPollTaskKind::FileRead,
+            Box::new(cb),
+        ));
     }
 }

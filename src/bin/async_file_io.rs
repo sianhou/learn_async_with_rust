@@ -29,6 +29,20 @@ fn async_file_io() {
             println!("{}", result.unwrap());
         },
     );
+
+    Fs::read(
+        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
+        |result| {
+            println!("{}", result.unwrap());
+        },
+    );
+
+    Fs::read(
+        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
+        |result| {
+            println!("{}", result.unwrap());
+        },
+    );
 }
 
 fn main() {
