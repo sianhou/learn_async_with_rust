@@ -4,9 +4,9 @@ use learn_async_with_rust::{
     task::{Fibonacchi, Fs},
 };
 
-fn async_file_io() {
+fn thread_pool_event() {
     Fs::read(
-        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
+        "./README.md",
         |result| {
             println!("{}", result.into_string().unwrap());
         },
@@ -31,5 +31,5 @@ fn async_file_io() {
 
 fn main() {
     let runtime = Runtime::new();
-    runtime.run(async_file_io);
+    runtime.run(thread_pool_event);
 }

@@ -4,10 +4,10 @@ use std::{
     thread,
 };
 
+use crate::ioresult::IOResult;
 use crate::nodethread::NodeThread;
 use crate::pollevent::PollEvent;
-use crate::task::{Task, ThreadPollTaskKind};
-use crate::ioresult::IOResult;
+use crate::task::{Task, ThreadPoolTaskKind};
 
 pub(crate) static mut RUNTIME: *mut Runtime = std::ptr::null_mut();
 
@@ -23,7 +23,7 @@ pub struct Runtime {
     // event_queue
     pub(crate) thread_pool_event: Vec<(
         Box<dyn Fn() -> IOResult + Send + 'static>,
-        ThreadPollTaskKind,
+        ThreadPoolTaskKind,
         Box<dyn FnOnce(IOResult) + 'static>,
     )>,
     // Event reciever
@@ -51,6 +51,11 @@ impl Runtime {
                         "thread {} - received a task of type: {}",
                         thread_id, task.kind
                     );
+
+                    if let ThreadPoolTaskKind::Close = task.kind {
+                        println!("thread {} - closed", thread_id);
+                        break;
+                    }
 
                     let res = (task.task)();
                     println!(
@@ -113,6 +118,15 @@ impl Runtime {
                 self.run_callbacks();
             }
         }
+
+        // Close the threadpool
+        for thread in self.thread_pool.into_iter() {
+            thread
+                .sender
+                .send(Task::close())
+                .expect("threadpool cleanup");
+            thread.handle.join().unwrap();
+        }
     }
 
     fn add_callback<U>(&mut self, ident: usize, cb: U)
@@ -161,12 +175,7 @@ impl Runtime {
         }
     }
 
-    fn process_threadpool_event(
-        &mut self,
-        thread_id: usize,
-        callback_id: usize,
-        data: IOResult,
-    ) {
+    fn process_threadpool_event(&mut self, thread_id: usize, callback_id: usize, data: IOResult) {
         self.callback_ready.push((callback_id, data));
         self.thread_available.push(thread_id);
     }

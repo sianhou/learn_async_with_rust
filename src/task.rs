@@ -2,22 +2,34 @@ use std::{fmt, fs, io::Read, thread};
 
 use crate::ioresult::IOResult;
 
-pub struct Task {
-    pub(crate) task: Box<dyn Fn() -> IOResult + Send + 'static>,
-    pub(crate) callback_id: usize,
-    pub(crate) kind: ThreadPollTaskKind,
-}
-
-pub enum ThreadPollTaskKind {
+pub enum ThreadPoolTaskKind {
+    Close,
     FileRead,
     CalFibonacchi,
 }
 
-impl fmt::Display for ThreadPollTaskKind {
+impl fmt::Display for ThreadPoolTaskKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ThreadPollTaskKind::FileRead => write!(f, "FileRead"),
-            ThreadPollTaskKind::CalFibonacchi => write!(f, "CalFibonacchi"),
+            ThreadPoolTaskKind::Close => write!(f, "Close"),
+            ThreadPoolTaskKind::FileRead => write!(f, "FileRead"),
+            ThreadPoolTaskKind::CalFibonacchi => write!(f, "CalFibonacchi"),
+        }
+    }
+}
+
+pub struct Task {
+    pub(crate) task: Box<dyn Fn() -> IOResult + Send + 'static>,
+    pub(crate) callback_id: usize,
+    pub(crate) kind: ThreadPoolTaskKind,
+}
+
+impl Task {
+    pub fn close() -> Self {
+        Task {
+            task: Box::new(|| IOResult::Undefined),
+            callback_id: 0,
+            kind: ThreadPoolTaskKind::Close,
         }
     }
 }
@@ -37,7 +49,7 @@ impl Fs {
 
         let rt = unsafe { &mut *crate::runtime::RUNTIME };
         rt.thread_pool_event
-            .push((Box::new(work), ThreadPollTaskKind::FileRead, Box::new(cb)));
+            .push((Box::new(work), ThreadPoolTaskKind::FileRead, Box::new(cb)));
     }
 }
 
@@ -59,7 +71,7 @@ impl Fibonacchi {
         let rt = unsafe { &mut *crate::runtime::RUNTIME };
         rt.thread_pool_event.push((
             Box::new(work),
-            ThreadPollTaskKind::CalFibonacchi,
+            ThreadPoolTaskKind::CalFibonacchi,
             Box::new(cb),
         ));
     }
