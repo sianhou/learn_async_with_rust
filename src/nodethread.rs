@@ -1,6 +1,4 @@
-use std::{
-    thread,
-    sync::mpsc::Sender};
+use std::{sync::mpsc::Sender, thread};
 
 use crate::task;
 

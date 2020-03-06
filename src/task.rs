@@ -1,11 +1,4 @@
-use std::{
-    io::Read,
-    fmt,
-    fs,
-    thread
-};
-
-use crate::runtime::Runtime;
+use std::{fmt, fs, io::Read, thread};
 
 pub struct Task {
     pub(crate) task: Box<dyn Fn() -> Option<String> + Send + 'static>,

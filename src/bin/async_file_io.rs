@@ -1,7 +1,4 @@
-use learn_async_with_rust::{
-    runtime::Runtime,
-    task::Fs,
-};
+use learn_async_with_rust::{runtime::Runtime, task::Fs};
 
 fn async_file_io() {
     println!("First call to read test.txt");
@@ -9,7 +6,28 @@ fn async_file_io() {
         "/home/user1/rust_workplace/learn_async_with_rust/README.md",
         |result| {
             println!("{}", result.unwrap());
-        }
+        },
+    );
+
+    Fs::read(
+        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
+        |result| {
+            println!("{}", result.unwrap());
+        },
+    );
+
+    Fs::read(
+        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
+        |result| {
+            println!("{}", result.unwrap());
+        },
+    );
+
+    Fs::read(
+        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
+        |result| {
+            println!("{}", result.unwrap());
+        },
     );
 }
 
