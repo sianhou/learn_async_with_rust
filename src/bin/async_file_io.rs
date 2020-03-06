@@ -1,48 +1,32 @@
-use learn_async_with_rust::{runtime::Runtime, task::Fs};
+use learn_async_with_rust::{
+    ioresult::IOResult,
+    runtime::Runtime,
+    task::{Fibonacchi, Fs},
+};
 
 fn async_file_io() {
-    println!("First call to read test.txt");
     Fs::read(
         "/home/user1/rust_workplace/learn_async_with_rust/README.md",
         |result| {
-            println!("{}", result.unwrap());
+            println!("{}", result.into_string().unwrap());
         },
     );
 
-    Fs::read(
-        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
-        |result| {
-            println!("{}", result.unwrap());
-        },
-    );
+    Fibonacchi::cal(5, |result| {
+        println!("{}", result.into_int().unwrap());
+    });
 
-    Fs::read(
-        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
-        |result| {
-            println!("{}", result.unwrap());
-        },
-    );
+    Fibonacchi::cal(10, |result| {
+        println!("{}", result.into_int().unwrap());
+    });
 
-    Fs::read(
-        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
-        |result| {
-            println!("{}", result.unwrap());
-        },
-    );
+    Fibonacchi::cal(15, |result| {
+        println!("{}", result.into_int().unwrap());
+    });
 
-    Fs::read(
-        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
-        |result| {
-            println!("{}", result.unwrap());
-        },
-    );
-
-    Fs::read(
-        "/home/user1/rust_workplace/learn_async_with_rust/README.md",
-        |result| {
-            println!("{}", result.unwrap());
-        },
-    );
+    Fibonacchi::cal(20, |result| {
+        println!("{}", result.into_int().unwrap());
+    });
 }
 
 fn main() {

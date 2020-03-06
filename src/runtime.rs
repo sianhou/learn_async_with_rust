@@ -7,23 +7,24 @@ use std::{
 use crate::nodethread::NodeThread;
 use crate::pollevent::PollEvent;
 use crate::task::{Task, ThreadPollTaskKind};
+use crate::ioresult::IOResult;
 
 pub(crate) static mut RUNTIME: *mut Runtime = std::ptr::null_mut();
 
 pub struct Runtime {
     // Pending callbacks
-    callback_pending: HashMap<usize, Box<dyn FnOnce(Option<String>)>>,
+    callback_pending: HashMap<usize, Box<dyn FnOnce(IOResult)>>,
     // Ready callbacks
-    callback_ready: Vec<(usize, Option<String>)>,
+    callback_ready: Vec<(usize, IOResult)>,
     // The unique id for callback function
     callback_token: usize,
     // Pending events
     event_pending: usize,
     // event_queue
     pub(crate) thread_pool_event: Vec<(
-        Box<dyn Fn() -> Option<String> + Send + 'static>,
+        Box<dyn Fn() -> IOResult + Send + 'static>,
         ThreadPollTaskKind,
-        Box<dyn FnOnce(Option<String>) + 'static>,
+        Box<dyn FnOnce(IOResult) + 'static>,
     )>,
     // Event reciever
     event_reciever: Receiver<PollEvent>,
@@ -105,7 +106,7 @@ impl Runtime {
                 if let Ok(event) = self.event_reciever.recv() {
                     match event {
                         PollEvent::Threadpool((thread_id, callback_id, data)) => {
-                            self.process_threadpool_events(thread_id, callback_id, data);
+                            self.process_threadpool_event(thread_id, callback_id, data);
                         }
                     }
                 }
@@ -116,7 +117,7 @@ impl Runtime {
 
     fn add_callback<U>(&mut self, ident: usize, cb: U)
     where
-        U: FnOnce(Option<String>) + 'static,
+        U: FnOnce(IOResult) + 'static,
     {
         self.callback_pending.insert(ident, Box::new(cb));
     }
@@ -160,11 +161,11 @@ impl Runtime {
         }
     }
 
-    fn process_threadpool_events(
+    fn process_threadpool_event(
         &mut self,
         thread_id: usize,
         callback_id: usize,
-        data: Option<String>,
+        data: IOResult,
     ) {
         self.callback_ready.push((callback_id, data));
         self.thread_available.push(thread_id);
