@@ -1,14 +1,14 @@
 use std::{ 
     thread, 
     collections::HashMap, 
-    sync::mpsc::channel 
+    sync::mpsc::{channel, Receiver, Sender}, 
 };
 
 use crate::nodethread::NodeThread;
 use crate::pollevent::PollEvent;
 use crate::task::{
     Task, 
-    ThreadPollTaskKind
+    ThreadPollTaskKind,
 };
 
 pub(crate) static mut RUNTIME: *mut Runtime = std::ptr::null_mut();
@@ -16,12 +16,16 @@ pub(crate) static mut RUNTIME: *mut Runtime = std::ptr::null_mut();
 pub struct Runtime {
     /// Available threads for the threadpool
     available_threads: Vec<usize>,
+    // Callbacks scheduled to run
+
     /// All registered callbacks
     callback_queue: HashMap<usize, Box<dyn FnOnce(Option<String>) >>,
     // the unique id for callback funciton
     identity_token: usize,
     pending_events: usize,
-    thread_pool: Vec<NodeThread>,    
+    thread_pool: Vec<NodeThread>,
+    event_reciever: Receiver<PollEvent>,
+    callbacks_to_run: Vec<(usize, Option<String>)>,
 }
 
 impl Runtime {
@@ -39,6 +43,12 @@ impl Runtime {
                 .spawn( move || {
                     while let Ok(task) = evt_reciever.recv() {
                         println!("received a task of type: {}", task.kind);
+
+                        let res = (task.task)();
+                        println!("finished running a task of type: {}.", task.kind);
+
+                        let event = PollEvent::Threadpool((i, task.callback_id, res));
+                        event_sender.send(event).expect("threadpool");
                     }
                 })
                 .expect("Couldn't initialze thread pool");
@@ -57,13 +67,40 @@ impl Runtime {
             identity_token: 0,
             pending_events: 0,
             thread_pool: threads,
+            event_reciever: event_reciever,
+            callbacks_to_run: vec![],
         }
     }
 
-    pub fn run(mut self) {
+    pub fn run(mut self, f: impl Fn()) {
+
         let rt_ptr: *mut Runtime = &mut self;
-        unsafe { RUNTIME = rt_ptr; }
-        println!{"{:p}", rt_ptr};
+        unsafe { RUNTIME = rt_ptr };
+
+        let mut ticks = 0;
+
+        f();
+
+        while self.pending_events > 0 {
+            ticks += 1;
+            // NOT PART OF LOOP, JUST FOR US TO SEE WHAT TICK IS EXCECUTING
+            //println!("===== TICK {} =====", ticks);
+
+            // ===== 4. POLL =====
+            // First we need to check if we have any outstanding events at all
+            // and if not we're finished. If not we will wait forever.
+
+            if let Ok(event) = self.event_reciever.recv() {
+                match event {
+                    PollEvent::Threadpool((thread_id, callback_id, data)) => {
+                        self.process_threadpool_events(thread_id, callback_id, data);
+                    }
+                }
+            }
+
+            self.run_callbacks();
+        }
+
     }
 
     fn add_callback<U>(&mut self, ident: usize, cb: U) 
@@ -92,7 +129,7 @@ impl Runtime {
         }
     }
 
-    fn register_event_threadpool<T, U>(&mut self, task: T, cb: U)
+    pub fn register_event_threadpool<T, U>(&mut self, task: T, kind: ThreadPollTaskKind, cb: U)
     where 
         T: Fn() -> Option<String> + Send + 'static,
         U: FnOnce(Option<String>) + 'static 
@@ -103,7 +140,7 @@ impl Runtime {
         let event = Task {
             task: Box::new(task),
             callback_id: callback_id,
-            kind: ThreadPollTaskKind::FileRead, 
+            kind: kind, 
         };
 
         let available_thread = self.get_available_thread();
@@ -114,6 +151,18 @@ impl Runtime {
         self.pending_events += 1;
     }
 
+    fn process_threadpool_events(&mut self, thread_id: usize, callback_id: usize, data: Option<String>) {
+        self.callbacks_to_run.push((callback_id, data));
+        self.available_threads.push(thread_id);
+    }
+
+    fn run_callbacks(&mut self) {
+        while let Some((callback_id, data)) = self.callbacks_to_run.pop() {
+            let cb = self.callback_queue.remove(&callback_id).unwrap();
+            cb(data);
+            self.pending_events -= 1;
+        }
+    }
 
 }
 

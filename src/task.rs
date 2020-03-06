@@ -1,4 +1,9 @@
-use std::{fmt};
+use std::{
+    io::Read,
+    fmt,
+    fs,
+    thread
+};
 
 use crate::runtime::Runtime;
 
@@ -23,9 +28,18 @@ impl fmt::Display for ThreadPollTaskKind {
 pub struct Fs;
 
 impl Fs {
-    pub fn read() {
-        let mut rt_ptr : *mut Runtime = std::ptr::null_mut();
-        unsafe { rt_ptr =crate::runtime:: RUNTIME; }
-        println!{"{:p}", rt_ptr};
+    pub fn read(path: &'static str, cb: impl Fn(Option<String>) + 'static) {
+        let work = move || {
+            thread::sleep(std::time::Duration::from_secs(2));
+            let mut buffer = String::new();
+            fs::File::open(&path)
+                .unwrap()
+                .read_to_string(&mut buffer)
+                .unwrap();
+            Option::Some(buffer)
+        };
+
+        let rt = unsafe { &mut *crate::runtime::RUNTIME };
+        rt.register_event_threadpool(work, ThreadPollTaskKind::FileRead, cb);
     }
 }
