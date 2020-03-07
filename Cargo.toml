@@ -8,4 +8,3 @@ edition = "2018"
 
 [dependencies]
 minimio = {git = "https://github.com/cfsamson/examples-minimio", branch = "master"}
-lazy_static = "1.4.0"
