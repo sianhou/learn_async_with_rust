@@ -1,4 +1,4 @@
-use learn_async_with_rust::{
+use async_with_callback::{
     runtime::Runtime,
     task::{Fibonacchi, Fs},
 };
