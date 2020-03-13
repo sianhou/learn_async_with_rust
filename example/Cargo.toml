@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 async_with_callback = { path = "../async_with_callback" }
-minimio = { path = "../minimio" }
+minimio = { path = "../minimio_copy" }

@@ -1,6 +1,6 @@
 [workspace]
 members = [
     "async_with_callback",
-    "minimio",
+    "minimio_copy",
     "example",
 ]
