@@ -1,0 +1,1 @@
+A copy of [examples-minimio](https://github.com/cfsamson/examples-minimio)

@@ -6,7 +6,7 @@ use std::sync::{
     Arc,
 };
 
-use crate::{Events, Interest, Token};
+use crate::{Events, Interests, Token};
 
 pub type Event = ffi::Event;
 
@@ -16,11 +16,11 @@ pub struct Registrator {
 }
 
 impl Registrator {
-    pub fn registrator(
+    pub fn register(
         &self,
         stream: &TcpStream,
         token: usize,
-        interest: Interest,
+        interest: Interests,
     ) -> io::Result<()> {
         if self.is_poll_dead.load(Ordering::SeqCst) {
             return Err(io::Error::new(
@@ -37,6 +37,23 @@ impl Registrator {
         if interest.is_writeable() {
             unimplemented!();
         }
+        Ok(())
+    }
+
+    pub fn close_loop(&self) -> io::Result<()> {
+        if self
+            .is_poll_dead
+            .compare_and_swap(false, true, Ordering::SeqCst)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Poll instance close.",
+            ));
+        }
+
+        let wake_fd = eventfd(1, 0)?;
+        let mut event = ffi::Event::new(ffi::EPOLLIN, 0);
+        epoll_ctl(self.fd, ffi::EPOLL_CTL_ADD, wake_fd, &mut event)?;
         Ok(())
     }
 }

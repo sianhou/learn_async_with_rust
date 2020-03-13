@@ -62,10 +62,10 @@ pub struct Registry {
     selector: Selector,
 }
 
-pub struct Interest(u8);
-impl Interest {
-    pub const WRITEABLE: Interest = Interest(WRITEABLE);
-    pub const READABLE: Interest = Interest(READABLE);
+pub struct Interests(u8);
+impl Interests {
+    pub const WRITEABLE: Interests = Interests(WRITEABLE);
+    pub const READABLE: Interests = Interests(READABLE);
 
     pub fn is_readable(&self) -> bool {
         self.0 & READABLE != 0
