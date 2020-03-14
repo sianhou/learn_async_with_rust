@@ -205,7 +205,7 @@ fn test_generate_cb_identity() {
         }
     }
     assert_eq!(ident, 3);
-
+/*
     let mut ident = 0;
     let taken = queue.contains_key(&ident);
     if !taken {
@@ -218,4 +218,5 @@ fn test_generate_cb_identity() {
         }
     }
     assert_eq!(ident, 3);
+*/
 }
