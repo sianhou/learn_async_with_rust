@@ -79,9 +79,9 @@ pub mod demo_linux {
 }
 
 fn main() {
-    if cfg!(target_os = "linux") {
-        demo_linux::test();
-    } else {
-        println!("target_os != linux");
-    }
+    #[cfg(target_os = "linux")]
+    demo_linux::test();
+
+    #[cfg(not(target_os = "linux"))]
+    println!("Target_os != linux.");
 }

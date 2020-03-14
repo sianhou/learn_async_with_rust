@@ -4,6 +4,11 @@ use std::sync::{
     Arc,
 };
 
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+pub use windows::{Event, Registrator, Selector, TcpStream};
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
