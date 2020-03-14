@@ -1,7 +1,7 @@
 use crate::{Events, Interests, Token};
 use std::io::{self, IoSliceMut, Read, Write};
 use std::net;
-use std::ok::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -32,18 +32,21 @@ impl Registrator {
             epoll_ctl(self.fd, ffi::EPOLL_CTL_ADD, fd, &mut event)?;
         }
 
-        if interests.is_writeable() {
-            unimplementd!();
+        if interests.is_writable() {
+            unimplemented!();
         }
 
         Ok(())
     }
 
     pub fn close_loop(&self) -> io::Result<()> {
-        if self.is_poll_dead.compare_and_swap(false, true, Ordering::SeqCst) {
+        if self
+            .is_poll_dead
+            .compare_and_swap(false, true, Ordering::SeqCst)
+        {
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
-                "Poll instance closed".
+                "Poll instance closed.",
             ));
         }
 
@@ -71,11 +74,11 @@ impl Selector {
         events.clear();
         let timeout = timeout_ms.unwrap_or(-1);
         epoll_wait(self.fd, events, 1024, timeout).map(|n_events| {
-            unsafe {events.set_len(n_events as usize)};
+            unsafe { events.set_len(n_events as usize) };
         })
     }
 
-    pub fn registerator(&self, is_poll_dead: Arc<AtomicBool>) ->Registrator {
+    pub fn registrator(&self, is_poll_dead: Arc<AtomicBool>) -> Registrator {
         Registrator {
             fd: self.fd,
             is_poll_dead,
@@ -111,12 +114,12 @@ impl TcpStream {
     pub fn connect(addr: impl net::ToSocketAddrs) -> io::Result<Self> {
         let stream = net::TcpStream::connect(addr)?;
         stream.set_nonblocking(true)?;
-        Ok(TcpStream{inner: stream})
+        Ok(TcpStream { inner: stream })
     }
 }
 
 impl Read for TcpStream {
-    fn read(&mut self, buf &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.set_nonblocking(false)?;
         (&self.inner).read(buf)
     }
@@ -127,7 +130,7 @@ impl Read for TcpStream {
 }
 
 impl Write for TcpStream {
-    fn write (&mut self, buf: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.inner.write(buf)
     }
 
