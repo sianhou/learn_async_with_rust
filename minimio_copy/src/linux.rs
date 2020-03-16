@@ -26,6 +26,13 @@ impl Registrator {
             ));
         }
 
+        if self.is_poll_dead.load(Ordering::SeqCst) {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Poll instance closed.",
+            ));
+        }
+
         let fd = stream.as_raw_fd();
         if interests.is_readable() {
             let mut event = ffi::Event::new(ffi::EPOLLIN | ffi::EPOLLONESHOT, token);
@@ -78,7 +85,11 @@ impl Selector {
         })
     }
 
+<<<<<<< HEAD
     pub fn registrator(&self, is_poll_dead: Arc<AtomicBool>) -> Registrator {
+=======
+    pub fn registerator(&self, is_poll_dead: Arc<AtomicBool>) -> Registrator {
+>>>>>>> minimio
         Registrator {
             fd: self.fd,
             is_poll_dead,
