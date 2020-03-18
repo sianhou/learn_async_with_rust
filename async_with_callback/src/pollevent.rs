@@ -5,4 +5,6 @@ pub enum PollEvent {
     /// the `callback_id` and the data which the we expect to process in our
     /// callback
     Threadpool((usize, usize, IOResult)),
+    Epoll(usize),
+    Timeout,
 }
