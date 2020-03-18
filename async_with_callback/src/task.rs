@@ -76,3 +76,10 @@ impl Fibonacchi {
         ));
     }
 }
+
+pub struct Http;
+impl Http {
+    pub fn http_get_slow(url: &str, delay_ms: u32, cb: impl Fn(IOResult) + 'static) {
+        let rt: &mut crate::runtime::Runtime = unsafe { &mut *crate::runtime::RUNTIME };
+    }
+}

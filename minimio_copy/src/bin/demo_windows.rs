@@ -1,3 +1,4 @@
+#[cfg(target_os = "windows")]
 pub mod demo_windows {
 
     #![allow(non_camel_case_types)]

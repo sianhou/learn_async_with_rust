@@ -85,11 +85,7 @@ impl Selector {
         })
     }
 
-<<<<<<< HEAD
     pub fn registrator(&self, is_poll_dead: Arc<AtomicBool>) -> Registrator {
-=======
-    pub fn registerator(&self, is_poll_dead: Arc<AtomicBool>) -> Registrator {
->>>>>>> minimio
         Registrator {
             fd: self.fd,
             is_poll_dead,
