@@ -3,4 +3,5 @@ members = [
     "async_with_callback",
     "minimio_copy",
     "example",
+    "future"
 ]
